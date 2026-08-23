@@ -150,7 +150,11 @@ BOOL leftShiftHeld;
 
         static char lastLThumbDirection = -2;
         char direction = -1;
-        if (xValue != 0 && yValue != 0) {
+        // See the matching comment in ControlJoystick: either component off centre, not both.
+        // A gamepad hits this far more often than a touch joystick does, because GCController
+        // snaps an axis to exactly 0 inside its deadzone -- so holding the stick forward with
+        // any sideways drift under the deadzone left the player standing still.
+        if (xValue != 0 || yValue != 0) {
             CGFloat degree = atan2f(yValue, xValue) * (180.0 / M_PI);
             if (degree < 0) {
                 degree += 360;

@@ -132,7 +132,11 @@ NSMutableDictionary* createButton(NSString* name, int* keycodes, NSString* dynam
 
     static char lastDirection = -2;
     char direction = -1;
-    if (xValue != 0 && yValue != 0) {
+    // A stick pushed straight along an axis has one component at zero -- due north is (0, 1).
+    // Requiring both components to be non-zero read that as centred and released all four
+    // keys, so the four cardinal directions produced no movement at all. What is being tested
+    // for here is "off centre", which is either component, not both.
+    if (xValue != 0 || yValue != 0) {
         CGFloat degree = atan2f(yValue, xValue) * (180.0 / M_PI);
         if (degree < 0) {
             degree += 360;
