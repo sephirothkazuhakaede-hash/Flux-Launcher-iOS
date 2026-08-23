@@ -112,7 +112,7 @@
     
     size_t length = (type == 2) ? 8 : 16;
 
-    // ä¼åéè¯æºå¶ï¼åå°éè¯æ¬¡æ°ï¼é¿åä¸å¿è¦çå»¶è¿
+    // Retry tuning: fewer attempts, so a stall does not add needless delay
     int maxRetries = (type == 2) ? 2 : 1;
     int retry;
     ssize_t sent = -1;
@@ -120,23 +120,23 @@
     for (retry = 0; retry < maxRetries; retry++) {
         sent = sendto(_sock, &packet, length, 0, (struct sockaddr *)&_target, sizeof(_target));
         if (sent == length) {
-            // åéæå
+            // Sent
             break;
         } else if (sent < 0) {
             int err = errno;
             if (err == EAGAIN || err == EWOULDBLOCK) {
-                // ç¼å²åºæ»¡ï¼ç­æä¼ç åéè¯
-                usleep(500); // åå°ä¼ç æ¶é´å°0.5æ¯«ç§
+                // Buffer full: sleep briefly, then retry
+                usleep(500); // 0.5 ms
                 continue;
             } else {
-                // å¶ä»éè¯¯ï¼è®°å½å¹¶éåºéè¯
+                // Any other error: log it and stop retrying
                 NSLog(@"[TouchController] Error: sendto failed: %s (type=%d, id=%d)", strerror(err), type, fingerId);
                 break;
             }
         } else {
-            // é¨ååéï¼çè®ºä¸ä¸ä¼åçï¼ï¼è®°å½å¹¶éè¯
+            // Partial send (should not happen): log it and retry
             NSLog(@"[TouchController] Warning: partial send: %zd of %zu bytes", sent, length);
-            usleep(500); // åå°ä¼ç æ¶é´å°0.5æ¯«ç§
+            usleep(500); // 0.5 ms
         }
     }
 
@@ -201,7 +201,7 @@
 @end
 
 // --- [START] TouchController Static Library Support ---
-// ProxyMessage ç±»åå®ä¹ (åè TouchController-iOSTest)
+// ProxyMessage type definitions (see TouchController-iOSTest)
 #define PROXY_MESSAGE_TYPE_ADD_POINTER 1
 #define PROXY_MESSAGE_TYPE_REMOVE_POINTER 2
 #define PROXY_MESSAGE_TYPE_VIBRATE 4
@@ -213,7 +213,7 @@
 #define PROXY_MESSAGE_TYPE_KEYBOARD_SHOW 8
 #define PROXY_MESSAGE_TYPE_INITIALIZE 10
 
-// Vibrate ç±»å
+// Vibrate types
 #define VIBRATE_KIND_BLOCK_BROKEN 0
 
 // --- [END] TouchController Static Library Support ---
@@ -304,7 +304,7 @@ static GameSurfaceView* pojavWindow;
 
 #pragma mark - TouchController Static Library Support
 
-// å¯å¨ TouchController æ¶æ¯æ¥æ¶å¾ªç¯
+// Start the TouchController message receive loop
 - (void)startTouchControllerMessageLoop {
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -318,25 +318,25 @@ static GameSurfaceView* pojavWindow;
                     [weakSelf processTouchControllerMessage:buffer];
                 }
 
-                // ä¼ç  16ms
+                // Sleep 16 ms
                 usleep(16000);
             }
         }
     });
 }
 
-// æ£æ¥è§å¾æ¯å¦å·²å³é­
+// Check whether the view has been dismissed
 - (BOOL)isViewDismissed {
     return !self.view.window || self.isBeingDismissed;
 }
 
-// ç¼ç  ProxyMessage: AddPointerMessage (type=1, index=int32, x=float, y=float)
+// Encode ProxyMessage: AddPointerMessage (type=1, index=int32, x=float, y=float)
 - (NSData *)encodeAddPointerMessage:(int32_t)index x:(float)x y:(float)y {
     NSMutableData *data = [NSMutableData dataWithCapacity:16];
     int32_t type = htonl(PROXY_MESSAGE_TYPE_ADD_POINTER);
     int32_t indexBE = htonl(index);
 
-    // å° float è½¬æ¢ä¸ºç½ç»å­èåº
+    // Convert the float to network byte order
     union { float f; uint32_t i; } ux, uy;
     ux.f = x;
     uy.f = y;
@@ -351,7 +351,7 @@ static GameSurfaceView* pojavWindow;
     return data;
 }
 
-// ç¼ç  ProxyMessage: RemovePointerMessage (type=2, index=int32)
+// Encode ProxyMessage: RemovePointerMessage (type=2, index=int32)
 - (NSData *)encodeRemovePointerMessage:(int32_t)index {
     NSMutableData *data = [NSMutableData dataWithCapacity:8];
     int32_t type = htonl(PROXY_MESSAGE_TYPE_REMOVE_POINTER);
@@ -363,7 +363,7 @@ static GameSurfaceView* pojavWindow;
     return data;
 }
 
-// åé ProxyMessage å° TouchController éæåº
+// Send a ProxyMessage to the TouchController static library
 - (void)sendTouchControllerProxyMessage:(int32_t)index x:(float)x y:(float)y isRemove:(BOOL)isRemove {
     NSData *messageData;
 
@@ -380,7 +380,7 @@ static GameSurfaceView* pojavWindow;
 
 #pragma mark - TouchController Text Input Support
 
-// ç¼ç  InputStatusMessage (type=7)
+// Encode InputStatusMessage (type=7)
 - (NSData *)encodeInputStatusMessageWithText:(NSString *)text
                               compositionStart:(int)compositionStart
                               compositionLength:(int)compositionLength
@@ -388,7 +388,7 @@ static GameSurfaceView* pojavWindow;
                               selectionLength:(int)selectionLength
                               selectionLeft:(BOOL)selectionLeft {
     if (!text) {
-        // æ æ°æ®ï¼åªåé type + 0
+        // No data, so send just type + 0
         int32_t type = htonl(7);
         NSMutableData *data = [NSMutableData dataWithCapacity:1];
         [data appendBytes:&type length:4];
@@ -397,12 +397,12 @@ static GameSurfaceView* pojavWindow;
         return data;
     }
 
-    // å° UTF-16 è½¬æ¢ä¸º UTF-8
+    // Convert UTF-16 to UTF-8
     NSData *textData = [text dataUsingEncoding:NSUTF8StringEncoding];
     const char *textBytes = (const char *)[textData bytes];
     int textLength = (int)[textData length];
 
-    // è®¡ç® UTF-8 ä½ç½®
+    // Work out the UTF-8 offset
     NSString *prefix = [text substringToIndex:compositionStart];
     NSData *prefixData = [prefix dataUsingEncoding:NSUTF8StringEncoding];
     int compositionStartUtf8 = (int)[prefixData length];
@@ -419,7 +419,7 @@ static GameSurfaceView* pojavWindow;
     NSData *selData = [selSegment dataUsingEncoding:NSUTF8StringEncoding];
     int selectionLengthUtf8 = (int)[selData length];
 
-    // ç¼ç æ¶æ¯
+    // Encode the message
     NSMutableData *data = [NSMutableData dataWithCapacity:5 + textLength + 17];
     int32_t type = htonl(7);
     [data appendBytes:&type length:4];
@@ -447,7 +447,7 @@ static GameSurfaceView* pojavWindow;
     return data;
 }
 
-// ç¼ç  InputCursorMessage (type=9)
+// Encode InputCursorMessage (type=9)
 - (NSData *)encodeInputCursorMessageWithRect:(CGRect)rect {
     NSMutableData *data = [NSMutableData dataWithCapacity:17];
     int32_t type = htonl(9);
@@ -475,7 +475,7 @@ static GameSurfaceView* pojavWindow;
     return data;
 }
 
-// ç¼ç  InputAreaMessage (type=11)
+// Encode InputAreaMessage (type=11)
 - (NSData *)encodeInputAreaMessageWithRect:(CGRect)rect {
     NSMutableData *data = [NSMutableData dataWithCapacity:17];
     int32_t type = htonl(11);
@@ -503,7 +503,7 @@ static GameSurfaceView* pojavWindow;
     return data;
 }
 
-// åéææ¬è¾å¥ç¶æå° TouchController
+// Send the text input state to TouchController
 - (void)sendTextInputStatus {
     if (self.touchControllerTransportHandle < 0) return;
 
@@ -524,7 +524,7 @@ static GameSurfaceView* pojavWindow;
     [TouchControllerBridge sendToTransport:self.touchControllerTransportHandle data:messageData];
 }
 
-// åéåæ ä½ç½®ä¿¡æ¯
+// Send the cursor position
 - (void)sendInputCursorWithRect:(CGRect)rect {
     if (self.touchControllerTransportHandle < 0) return;
 
@@ -532,7 +532,7 @@ static GameSurfaceView* pojavWindow;
     [TouchControllerBridge sendToTransport:self.touchControllerTransportHandle data:messageData];
 }
 
-// åéè¾å¥åºåä¿¡æ¯
+// Send the input area
 - (void)sendInputAreaWithRect:(CGRect)rect {
     if (self.touchControllerTransportHandle < 0) return;
 
@@ -542,7 +542,7 @@ static GameSurfaceView* pojavWindow;
 
 #pragma mark - TouchController Vibration Support
 
-// ç¼ç  VibrateMessage (type=4)
+// Encode VibrateMessage (type=4)
 - (NSData *)encodeVibrateMessageWithKind:(int32_t)kind {
     NSMutableData *data = [NSMutableData dataWithCapacity:8];
     int32_t type = htonl(PROXY_MESSAGE_TYPE_VIBRATE);
@@ -554,28 +554,28 @@ static GameSurfaceView* pojavWindow;
     return data;
 }
 
-// è§¦åéå¨åé¦
+// Trigger haptic feedback
 - (void)triggerVibrationWithKind:(int32_t)kind {
-    // æ£æ¥éå¨æ¯å¦å¯ç¨
+    // Check whether haptics are enabled
     if (!getPrefBool(@"control.mod_touch_vibrate_enable")) {
         return;
     }
 
-    // è·åéå¨å¼ºåº¦è®¾ç½®
+    // Read the haptic strength setting
     NSInteger intensity = [getPrefObject(@"control.mod_touch_vibrate_intensity") integerValue];
     if (intensity < 1) intensity = 1;
     if (intensity > 3) intensity = 3;
 
-    // ä½¿ç¨ UIImpactFeedbackGenerator è§¦åéå¨
+    // Trigger the haptic with UIImpactFeedbackGenerator
     UIImpactFeedbackGenerator *feedbackGenerator;
     switch (intensity) {
-        case 1: // è½»åº¦éå¨
+        case 1: // Light
             feedbackGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
             break;
-        case 2: // ä¸­åº¦éå¨
+        case 2: // Medium
             feedbackGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
             break;
-        case 3: // éåº¦éå¨
+        case 3: // Heavy
             feedbackGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleHeavy];
             break;
         default:
@@ -585,7 +585,7 @@ static GameSurfaceView* pojavWindow;
 
     [feedbackGenerator impactOccurred];
 
-    // åæ¶åé VibrateMessage å° TouchController
+    // Also send a VibrateMessage to TouchController
     if (self.touchControllerTransportHandle >= 0) {
         NSData *messageData = [self encodeVibrateMessageWithKind:kind];
         [TouchControllerBridge sendToTransport:self.touchControllerTransportHandle data:messageData];
@@ -643,7 +643,7 @@ static GameSurfaceView* pojavWindow;
 
 #pragma mark - TouchController MoveView Support
 
-// ç¼ç  MoveViewMessage (type=12)
+// Encode MoveViewMessage (type=12)
 - (NSData *)encodeMoveViewMessageWithScreenBased:(BOOL)screenBased
                                      deltaPitch:(float)deltaPitch
                                       deltaYaw:(float)deltaYaw {
@@ -651,7 +651,7 @@ static GameSurfaceView* pojavWindow;
     int32_t type = htonl(PROXY_MESSAGE_TYPE_MOVE_VIEW);
     uint8_t screenBasedByte = screenBased ? 1 : 0;
 
-    // å° float è½¬æ¢ä¸ºç½ç»å­èåº
+    // Convert the float to network byte order
     union { float f; uint32_t i; } up, uy;
     up.f = deltaPitch;
     uy.f = deltaYaw;
@@ -666,7 +666,7 @@ static GameSurfaceView* pojavWindow;
     return data;
 }
 
-// åéç§»å¨è§è§æ¶æ¯
+// Send the look-move message
 - (void)sendMoveViewWithDeltaPitch:(float)deltaPitch deltaYaw:(float)deltaYaw {
     if (self.touchControllerTransportHandle >= 0) {
         NSData *messageData = [self encodeMoveViewMessageWithScreenBased:YES
@@ -678,7 +678,7 @@ static GameSurfaceView* pojavWindow;
 
 #pragma mark - TouchController Message Receiver
 
-// å¤çä» TouchController æ¥æ¶å°çæ¶æ¯
+// Handle a message received from TouchController
 - (void)processTouchControllerMessage:(NSData *)messageData {
     if (messageData.length < 4) {
         NSLog(@"[TouchController] Message too short: %lu bytes", (unsigned long)messageData.length);
@@ -696,7 +696,7 @@ static GameSurfaceView* pojavWindow;
                 [messageData getBytes:&kind range:NSMakeRange(4, 4)];
                 kind = ntohl(kind);
                 
-                // ä½¿ç¨ dispatch_async ç¡®ä¿å¨ä¸»çº¿ç¨ä¸­è°ç¨
+                // dispatch_async, so this runs on the main thread
                 dispatch_async(dispatch_get_main_queue(), ^{
                     if (self.view && !self.isBeingDismissed) {
                         [self triggerVibrationWithKind:kind];
@@ -718,8 +718,8 @@ static GameSurfaceView* pojavWindow;
                 up.i = ntohl(pitchBE);
                 uy.i = ntohl(yawBE);
 
-                // MoveView æ¶æ¯éå¸¸æ¯ä»å®¢æ·ç«¯åéå°æå¡ç«¯ç
-                // è¿éæä»¬è®°å½æ¥å¿ï¼å®éåºç¨å¯è½éè¦ç¹æ®å¤ç
+                // MoveView messages normally travel from the client to the server.
+                // Logged here; a real use of them may need handling of its own.
                 NSLog(@"[TouchController] Received MoveView: screenBased=%d, pitch=%.2f, yaw=%.2f",
                       screenBased, up.f, uy.f);
             }
@@ -786,7 +786,7 @@ static GameSurfaceView* pojavWindow;
     }
 }
 
-// åå§åææ¬è¾å¥å­æ®µ
+// Set up the text input field
 #pragma mark - GestureRecognizer Delegate
 
 // Only moveViewPanGesture needs special handling; other gestures keep the default behavior
@@ -856,19 +856,19 @@ static GameSurfaceView* pojavWindow;
         self.touchControllerTextField.keyboardType = UIKeyboardTypeDefault;
         [self.view addSubview:self.touchControllerTextField];
 
-        // æ·»å ææ¬ååçå¬
+        // Listen for text changes
         [self.touchControllerTextField addTarget:self
                                           action:@selector(textFieldDidChange:)
                                 forControlEvents:UIControlEventEditingChanged];
     }
 }
 
-// å¤çææ¬åå
+// Handle a text change
 - (void)textFieldDidChange:(UITextField *)textField {
     [self sendTextInputStatus];
 }
 
-// æ¾ç¤ºææ¬è¾å¥çé¢
+// Show the text input UI
 - (void)showTouchControllerTextInput {
     if (!self.touchControllerTextInputEnabled) return;
 
@@ -876,19 +876,19 @@ static GameSurfaceView* pojavWindow;
     self.touchControllerTextField.hidden = NO;
     [self.touchControllerTextField becomeFirstResponder];
 
-    // åéè¾å¥åºåä¿¡æ¯
+    // Send the input area
     [self sendInputAreaWithRect:self.touchControllerTextField.frame];
 
-    // åéåå§ææ¬ç¶æ
+    // Send the initial text state
     [self sendTextInputStatus];
 }
 
-// éèææ¬è¾å¥çé¢
+// Hide the text input UI
 - (void)hideTouchControllerTextInput {
     [self.touchControllerTextField resignFirstResponder];
     self.touchControllerTextField.hidden = YES;
 
-    // åéç©ºç¶æä»¥å³é­è¾å¥
+    // Send an empty state to close input
     NSData *messageData = [self encodeInputStatusMessageWithText:nil
                                               compositionStart:0
                                               compositionLength:0
@@ -1150,11 +1150,11 @@ static GameSurfaceView* pojavWindow;
     
     self.touchSender = [[TouchSender alloc] init];
 
-    // åå§å TouchController éæåº Transport
+    // Set up the TouchController static library Transport
     if (getPrefBool(@"control.mod_touch_enable")) {
         NSInteger mode = [getPrefObject(@"control.mod_touch_mode") integerValue];
         if (mode == 2 && [TouchControllerBridge isTouchControllerAvailable]) {
-            // éæåºæ¨¡å¼ï¼åå»º Transport
+            // Static library mode: create the Transport
             self.touchControllerTransportHandle = [TouchControllerBridge createTransportWithName:@"/tmp/touchcontroller.sock"];
             if (self.touchControllerTransportHandle < 0) {
                 NSLog(@"[TouchController] Failed to create transport for static library mode");
@@ -1168,13 +1168,13 @@ static GameSurfaceView* pojavWindow;
         self.touchControllerTransportHandle = -1;
     }
 
-    // åå§å TouchController ææ¬è¾å¥æ¯æ
+    // Set up TouchController text input support
     if (self.touchControllerTransportHandle >= 0) {
         self.touchControllerTextInputEnabled = YES;
         [self setupTouchControllerTextInput];
         NSLog(@"[TouchController] Text input support initialized");
 
-        // å¯å¨æ¶æ¯æ¥æ¶å®æ¶å¨
+        // Start the message receive timer
         [self startTouchControllerMessageLoop];
     }
 
@@ -1393,7 +1393,7 @@ static GameSurfaceView* pojavWindow;
             NSLog(@"[SurfaceViewController] Error: metadata is nil");
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self dismissLaunchOverlayOnError];
-                showDialog(localize(@"Error", nil), @"æ¸¸æçæ®å è½½å¤±è´¥ï¼è¯·éæ°éæ©çæ¬");
+                showDialog(localize(@"Error", nil), localize(@"launch.error.version_metadata", @"Shown when the selected version has no metadata to launch from"));
             });
             return;
         }
@@ -1420,7 +1420,7 @@ static GameSurfaceView* pojavWindow;
             NSLog(@"[SurfaceViewController] Error: no authenticator available");
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self dismissLaunchOverlayOnError];
-                showDialog(localize(@"Error", nil), @"è¯·åç»å½è´¦æ·");
+                showDialog(localize(@"Error", nil), localize(@"launch.error.no_account", @"Shown when the game is started with no account selected"));
             });
             return;
         }
@@ -1792,7 +1792,7 @@ static GameSurfaceView* pojavWindow;
 }
 
 - (void)keyboardGesture:(UIGestureRecognizer*)gestureRecognizer {
-    // [ä¿®æ­£] æ·»å äºå¯¹è®¾ç½®é¡¹ control.two_finger_keyboard çæ£æ¥
+    // [Fix] Also check the control.two_finger_keyboard setting
     if (!getPrefBool(@"control.two_finger_keyboard")) {
         return;
     }
@@ -2209,7 +2209,7 @@ static NSMutableDictionary *s_touchToFingerIdMap = nil;
     if (getPrefBool(@"control.mod_touch_enable")) {
         NSInteger mode = [getPrefObject(@"control.mod_touch_mode") integerValue];
 
-        if (mode == 1) {  // UDP æ¨¡å¼
+        if (mode == 1) { // UDP mode
             for (UITouch *touch in touches) {
                 if (touch.view != self.surfaceView) continue;
 
@@ -2219,7 +2219,7 @@ static NSMutableDictionary *s_touchToFingerIdMap = nil;
                 // Send Type 1 (Add Pointer)
                 [self.touchSender sendType:1 id:[self getFingerId:touch] x:x y:y];
             }
-        } else if (mode == 2) {  // éæåºæ¨¡å¼
+        } else if (mode == 2) { // Static library mode
             for (UITouch *touch in touches) {
                 if (touch.view != self.surfaceView) continue;
 
@@ -2256,7 +2256,7 @@ static NSMutableDictionary *s_touchToFingerIdMap = nil;
     if (getPrefBool(@"control.mod_touch_enable")) {
         NSInteger mode = [getPrefObject(@"control.mod_touch_mode") integerValue];
 
-        if (mode == 1) {  // UDP æ¨¡å¼
+        if (mode == 1) { // UDP mode
             for (UITouch *touch in touches) {
                 if (touch.view != self.surfaceView) continue;
 
@@ -2266,7 +2266,7 @@ static NSMutableDictionary *s_touchToFingerIdMap = nil;
                 // Send Type 1 (Move Pointer)
                 [self.touchSender sendType:1 id:[self getFingerId:touch] x:x y:y];
             }
-        } else if (mode == 2) {  // éæåºæ¨¡å¼
+        } else if (mode == 2) { // Static library mode
             for (UITouch *touch in touches) {
                 if (touch.view != self.surfaceView) continue;
 
@@ -2304,13 +2304,13 @@ static NSMutableDictionary *s_touchToFingerIdMap = nil;
     if (getPrefBool(@"control.mod_touch_enable")) {
         NSInteger mode = [getPrefObject(@"control.mod_touch_mode") integerValue];
 
-        if (mode == 1) {  // UDP æ¨¡å¼
+        if (mode == 1) { // UDP mode
             for (UITouch *touch in touches) {
                 if (touch.view != self.surfaceView) continue;
                 // Send Type 2 (Remove Pointer) for surfaceView touch ending
                 [self.touchSender sendType:2 id:[self getFingerId:touch] x:0 y:0];
             }
-        } else if (mode == 2) {  // éæåºæ¨¡å¼
+        } else if (mode == 2) { // Static library mode
             for (UITouch *touch in touches) {
                 if (touch.view != self.surfaceView) continue;
                 // Send ProxyMessage: RemovePointerMessage
@@ -2333,12 +2333,12 @@ static NSMutableDictionary *s_touchToFingerIdMap = nil;
     if (getPrefBool(@"control.mod_touch_enable")) {
         NSInteger mode = [getPrefObject(@"control.mod_touch_mode") integerValue];
 
-        if (mode == 1) {  // UDP æ¨¡å¼
+        if (mode == 1) { // UDP mode
             for (UITouch *touch in touches) {
                 if (touch.view != self.surfaceView) continue;
                 [self.touchSender sendType:2 id:[self getFingerId:touch] x:0 y:0];
             }
-        } else if (mode == 2) {  // éæåºæ¨¡å¼
+        } else if (mode == 2) { // Static library mode
             for (UITouch *touch in touches) {
                 if (touch.view != self.surfaceView) continue;
                 [self sendTouchControllerProxyMessage:[self getFingerId:touch] x:0 y:0 isRemove:YES];
@@ -2469,7 +2469,7 @@ static NSMutableDictionary *s_touchToFingerIdMap = nil;
     // ZeroTier/Terracotta multiplayer temporarily removed: the original stopAllMultiplayerServices call is commented out
     // [[MultiplayerManager sharedManager] stopAllMultiplayerServices];
 
-    //æ¸ç TouchController èµæº
+    // Clean up TouchController resources
     if (self.touchControllerTransportHandle >= 0) {
         [TouchControllerBridge destroyTransport:self.touchControllerTransportHandle];
         self.touchControllerTransportHandle = -1;

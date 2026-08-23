@@ -646,6 +646,8 @@
 "launch.total_seconds" = "Total %.1fs";
 "launch.total_minutes" = "Total %.0fm %.0fs";
 "launch.cancel" = "Cancel";
+"launch.error.version_metadata" = "This version could not be loaded. Pick a version and try again.";
+"launch.error.no_account" = "Sign in to an account before starting the game.";
 "launch.cancel_confirm_title" = "Cancel launch?";
 "launch.cancel_confirm_message" = "Canceling will terminate the current game loading process and return to the launcher.";
 "launch.cancel_confirm_yes" = "Cancel";
