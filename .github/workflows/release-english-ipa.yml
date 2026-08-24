@@ -175,7 +175,7 @@ jobs:
           tag_name: ${{ inputs.release_tag }}
           name: ${{ inputs.release_tag }}
           body: |
-            Air - a Minecraft: Java Edition launcher for iOS and iPadOS, in English.
+            Flux - a Minecraft: Java Edition launcher for iOS and iPadOS, in English.
 
             Built from `${{ github.ref_name }}` at `${{ github.sha }}`.
 
