@@ -630,7 +630,17 @@ int launchJVM(NSString *accountId, id launchTarget, int width, int height, int m
 
     int allocmem;
     if (getPrefBool(@"java.auto_ram")) {
-        CGFloat autoRatio = getEntitlementValue(@"com.apple.private.memorystatus") ? 0.4 : 0.25;
+        // 0.25 is the share a jailed process with no memory entitlement at all can rely on.
+        // Two things raise the jetsam ceiling above that: com.apple.private.memorystatus on a
+        // jailbroken device, and com.apple.developer.kernel.increased-memory-limit on a build
+        // signed by a profile that authorises it. Only the first was being checked, so a
+        // correctly entitled build was held to the unentitled share - 1920 MB on an 8 GB
+        // device, which no 1.12.2 pack of any size will load in. The failure is silent: the
+        // heap is large enough to keep collecting and never large enough to finish, so the
+        // game sits on the loading screen collecting instead of throwing OutOfMemoryError.
+        BOOL raisedCeiling = getEntitlementValue(@"com.apple.private.memorystatus")
+            || getEntitlementValue(@"com.apple.developer.kernel.increased-memory-limit");
+        CGFloat autoRatio = raisedCeiling ? 0.4 : 0.25;
         allocmem = roundf((NSProcessInfo.processInfo.physicalMemory >> 20) * autoRatio);
     } else {
         allocmem = getPrefInt(@"java.allocated_memory");
