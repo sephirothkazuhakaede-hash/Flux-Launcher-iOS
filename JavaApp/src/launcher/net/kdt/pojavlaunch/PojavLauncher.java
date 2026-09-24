@@ -214,32 +214,6 @@ public class PojavLauncher {
         if (graphicsApi != null && !graphicsApi.isEmpty()) {
             MCOptionUtils.load();
 
-            // MC 26.x records a failed graphics startup and, on the next launch, may
-            // rewrite prefer_vulkan to OpenGL before renderer creation. On iOS that
-            // recovery is counterproductive when MoltenVK was explicitly selected:
-            // the fallback EGL context is not the context LWJGL 3.4.1 expects, which
-            // ends in GL.createCapabilities() with "no OpenGL context current".
-            //
-            // Clear the vanilla startup-recovery markers when the user explicitly
-            // asks for MoltenVK/Vulkan. This preserves vanilla recovery for every
-            // other renderer/API combination.
-            boolean explicitMoltenVk =
-                    ("libMoltenVK.dylib".equals(renderer) || "vulkan".equals(renderer))
-                    && ("vulkan".equalsIgnoreCase(graphicsApi) || "prefer_vulkan".equalsIgnoreCase(graphicsApi));
-            if (explicitMoltenVk) {
-                String[] recoveryKeys = {
-                    "graphicsApiLastKnownGood",
-                    "graphicsApiLastKnownWorking",
-                    "graphicsApiStartupFailure",
-                    "graphicsApiFailed",
-                    "graphicsApiFallback",
-                    "lastGraphicsApi",
-                    "lastKnownGoodGraphicsApi"
-                };
-                for (String key : recoveryKeys) MCOptionUtils.remove(key);
-                System.out.println("[PojavLauncher] MoltenVK selected: cleared graphics startup recovery markers");
-            }
-
             if ("default".equalsIgnoreCase(graphicsApi)) {
                 // When "Default" is selected, remove the graphicsApi line from options.txt
                 // so MC 26.2+ uses its internal default behavior (it does not read the field)
