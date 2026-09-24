@@ -410,6 +410,46 @@ void init_loadCustomJvmFlags(int* argc, const char** argv) {
     }
 }
 
+// Extract the Minecraft generation from vanilla, snapshot, and loader-prefixed version IDs.
+// Examples: 26.2 -> 26, 26w14a -> 26, fabric-loader-0.19.5-26.2-... -> 26.
+// Keep legacy 1.x IDs pinned to LWJGL 3.3.3 so loader/build numbers cannot be mistaken for MC 26+.
+static NSInteger FluxMinecraftMajorFromVersionId(NSString *versionId) {
+    if (![versionId isKindOfClass:[NSString class]] || versionId.length == 0) {
+        return 0;
+    }
+    NSRegularExpression *legacyRegex = [NSRegularExpression
+        regularExpressionWithPattern:@"(?:^|[-_])1\\.\\d" options:0 error:nil];
+    if ([legacyRegex firstMatchInString:versionId
+                                options:0
+                                  range:NSMakeRange(0, versionId.length)]) {
+        return 1;
+    }
+    NSRegularExpression *yearRegex = [NSRegularExpression
+        regularExpressionWithPattern:@"(?:^|[-_])(\\d{2})(?=[.w])" options:0 error:nil];
+    NSTextCheckingResult *match = [yearRegex firstMatchInString:versionId
+                                                        options:0
+                                                          range:NSMakeRange(0, versionId.length)];
+    if (match && match.numberOfRanges >= 2) {
+        return [[versionId substringWithRange:[match rangeAtIndex:1]] integerValue];
+    }
+    return 0;
+}
+
+// Match current Air: explicit profile overrides are honored, otherwise MC 26.x+ gets
+// the 3.4.1 runtime and older Minecraft stays on 3.3.3.
+static NSString *ResolveLwjglVersion(NSString *profileValue, NSString *mcVersionId) {
+    if ([profileValue isEqualToString:@"333"] || [profileValue isEqualToString:@"341"]) {
+        return profileValue;
+    }
+    NSInteger mcMajor = FluxMinecraftMajorFromVersionId(mcVersionId);
+    if (mcMajor >= 26) {
+        NSLog(@"[LWJGLSel] Minecraft major %ld from \"%@\" -> LWJGL 3.4.1",
+              (long)mcMajor, mcVersionId);
+        return @"341";
+    }
+    return @"333";
+}
+
 int launchJVM(NSString *accountId, id launchTarget, int width, int height, int minVersion) {
     NSLog(@"[JavaLauncher] Beginning JVM launch");
 
@@ -1208,25 +1248,41 @@ int launchJVM(NSString *accountId, id launchTarget, int width, int height, int m
     init_loadCustomJvmFlags(&margc, (const char **)margv);
     NSLog(@"[Init] Found JLI lib");
 
-    // Key fix (26.2 startup crash): a single lwjgl.jar (aligned with the Ynnyny repo)
-    // The workspace used to split it into lwjgl.jar and lwjgl33.jar; it now uses one merged jar, as Ynnyny does.
-    // The customized root lwjgl.jar (with the iOS-specific LWJGL patches) is already merged into lwjgl.jar by JavaApp/Makefile.
-    NSString *lwjglJar = [NSString stringWithFormat:@"%@/lwjgl.jar", librariesPath];
-    NSLog(@"[JavaLauncher] Using LWJGL jar at %@", lwjglJar);
+    // Dual LWJGL runtime, ported from current Air.
+    // Minecraft 26.x requires LWJGL 3.4.1 (Sodium 0.9.x checks this at startup);
+    // older Minecraft keeps the established 3.3.3 iOS runtime.
+    NSString *mcVersionId = nil;
+    if ([launchTarget isKindOfClass:NSDictionary.class]) {
+        mcVersionId = [launchTarget[@"id"] description];
+    } else if ([launchTarget isKindOfClass:NSString.class]) {
+        mcVersionId = (NSString *)launchTarget;
+    }
+    if (mcVersionId.length == 0) {
+        mcVersionId = [PLProfiles.current.selectedProfile[@"lastVersionId"] description];
+    }
 
-    // Check that the target LWJGL jar exists, so it cannot fail silently
-    if (![fm fileExistsAtPath:lwjglJar]) {
+    NSString *lwjglVersion = ResolveLwjglVersion(
+        [PLProfiles resolveKeyForCurrentProfile:@"lwjglVersion"], mcVersionId);
+    NSLog(@"[JavaLauncher] Using LWJGL %@ (mcVersion=%@)", lwjglVersion, mcVersionId);
+    PUSH_MARGV_FORMAT(@"-Dpojav.lwjgl.version=%@", lwjglVersion);
+
+    NSString *lwjglDir = [NSString stringWithFormat:@"%@/lwjgl-%@", librariesPath, lwjglVersion];
+    NSString *lwjglJar = [NSString stringWithFormat:@"%@/*", lwjglDir];
+    NSLog(@"[JavaLauncher] Using LWJGL runtime at %@", lwjglDir);
+
+    BOOL lwjglDirIsDir = NO;
+    if (![fm fileExistsAtPath:lwjglDir isDirectory:&lwjglDirIsDir] || !lwjglDirIsDir) {
         UIKit_returnToSplitView();
-        showDialog(localize(@"Error", nil), [NSString stringWithFormat:@"LWJGL jar missing: %@", [lwjglJar lastPathComponent]]);
+        showDialog(localize(@"Error", nil),
+                   [NSString stringWithFormat:@"LWJGL runtime missing: lwjgl-%@", lwjglVersion]);
         return 1;
     }
 
     NSMutableString *classpathBuilder = [NSMutableString string];
     NSArray *libFiles = [fm contentsOfDirectoryAtPath:librariesPath error:nil];
     for (NSString *libFile in libFiles) {
-        // Exclude the merged LWJGL jar precisely to avoid duplicates, while keeping the other dependency jars whose names start with lwjgl
-        if ([libFile hasSuffix:@".jar"] &&
-            ![libFile isEqualToString:@"lwjgl.jar"]) {
+        // Versioned LWJGL lives in subdirectories, so only ordinary root-level jars are added here.
+        if ([libFile hasSuffix:@".jar"]) {
             [classpathBuilder appendFormat:@"%@/%@:", librariesPath, libFile];
         }
     }

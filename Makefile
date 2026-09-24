@@ -371,7 +371,11 @@ payload: native dep_mg java jre assets
 		ln -sf libspirv-cross-c-shared.0.dylib $(WORKINGDIR)/Flux.app/Frameworks/libspirv-cross.dylib; \
 	fi
 		cp -R $(SOURCEDIR)/JavaApp/libs/others/* $(WORKINGDIR)/Flux.app/libs/ || exit 1
-	cp $(SOURCEDIR)/JavaApp/build/*.jar $(WORKINGDIR)/Flux.app/libs/ || exit 1
+	cp $(SOURCEDIR)/JavaApp/build/launcher.jar $(SOURCEDIR)/JavaApp/build/patchjna_agent.jar $(SOURCEDIR)/JavaApp/build/patchsvc.jar $(WORKINGDIR)/Flux.app/libs/ || exit 1
+	# Ship separate LWJGL runtimes. Minecraft 26.x selects 3.4.1; older versions keep 3.3.3.
+	mkdir -p $(WORKINGDIR)/Flux.app/libs/lwjgl-333 $(WORKINGDIR)/Flux.app/libs/lwjgl-341; \
+	cp $(SOURCEDIR)/JavaApp/build/lwjgl-333.jar $(WORKINGDIR)/Flux.app/libs/lwjgl-333/lwjgl.jar || exit 1
+	cp $(SOURCEDIR)/JavaApp/build/lwjgl-341.jar $(WORKINGDIR)/Flux.app/libs/lwjgl-341/lwjgl.jar || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo/* $(WORKINGDIR)/Flux.app/libs_caciocavallo || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo17/* $(WORKINGDIR)/Flux.app/libs_caciocavallo17 || exit 1
 	# Copy TouchController static library if available
@@ -431,7 +435,10 @@ deploy:
 		ldid -S$(SOURCEDIR)/entitlements.trollstore.xml $(WORKINGDIR)/Flux.app/Flux || exit 1; \
 		sudo mv $(WORKINGDIR)/*.dylib $(PREFIX)Applications/Flux.app/Frameworks/ || exit 1; \
 		sudo mv $(WORKINGDIR)/Flux.app/Flux $(PREFIX)Applications/Flux.app/Flux || exit 1; \
-		sudo mv $(SOURCEDIR)/JavaApp/build/*.jar $(PREFIX)Applications/Flux.app/libs/ || exit 1; \
+		sudo mv $(SOURCEDIR)/JavaApp/build/launcher.jar $(SOURCEDIR)/JavaApp/build/patchjna_agent.jar $(SOURCEDIR)/JavaApp/build/patchsvc.jar $(PREFIX)Applications/Flux.app/libs/ || exit 1; \
+		sudo mkdir -p $(PREFIX)Applications/Flux.app/libs/lwjgl-333 $(PREFIX)Applications/Flux.app/libs/lwjgl-341 || exit 1; \
+		sudo mv $(SOURCEDIR)/JavaApp/build/lwjgl-333.jar $(PREFIX)Applications/Flux.app/libs/lwjgl-333/lwjgl.jar || exit 1; \
+		sudo mv $(SOURCEDIR)/JavaApp/build/lwjgl-341.jar $(PREFIX)Applications/Flux.app/libs/lwjgl-341/lwjgl.jar || exit 1; \
 		cd $(PREFIX)Applications/Flux.app/Frameworks || exit 1; \
 		sudo chown -R 501:501 $(PREFIX)Applications/Flux.app/* || exit 1; \
 	elif [ '$(IOS)' = '0' ] && [ '$(DETECTPLAT)' = 'Darwin' ]; then \
