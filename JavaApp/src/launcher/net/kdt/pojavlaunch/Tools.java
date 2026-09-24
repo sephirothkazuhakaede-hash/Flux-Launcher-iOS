@@ -201,6 +201,34 @@ public final class Tools {
             ), varArgMap
         );
 
+        // Minecraft 26.2+ has its own crash-recovery logic. If the previous startup did not
+        // finish cleanly it can override options.txt and force OpenGL before backend creation.
+        // That is fatal on iOS when MoltenVK was explicitly selected: the game leaves the Vulkan
+        // path and LWJGL later sees no compatible current OpenGL context.
+        //
+        // 26.2 provides an official --graphicsBackend launch argument. Unlike the in-game
+        // preference, Minecraft treats this as an explicit forced backend and does not replace
+        // it with OpenGL after a previous crash. Only add it for an explicit MoltenVK +
+        // prefer_vulkan selection, leaving all other renderer/API combinations unchanged.
+        String selectedRenderer = System.getenv("AMETHYST_RENDERER");
+        String selectedGraphicsApi = System.getenv("AMETHYST_GRAPHICS_API");
+        if (("libMoltenVK.dylib".equals(selectedRenderer) || "vulkan".equals(selectedRenderer))
+                && ("vulkan".equalsIgnoreCase(selectedGraphicsApi) || "prefer_vulkan".equalsIgnoreCase(selectedGraphicsApi))
+                && versionName != null && versionName.matches("^26\\\\..*")) {
+            List<String> forcedArgs = new ArrayList<String>(Arrays.asList(argsFromJson));
+            // Avoid duplicates if a custom/version JSON already supplies the argument.
+            int existing = forcedArgs.indexOf("--graphicsBackend");
+            if (existing >= 0) {
+                if (existing + 1 < forcedArgs.size()) forcedArgs.set(existing + 1, "vulkan");
+                else forcedArgs.add("vulkan");
+            } else {
+                forcedArgs.add("--graphicsBackend");
+                forcedArgs.add("vulkan");
+            }
+            argsFromJson = forcedArgs.toArray(new String[0]);
+            System.out.println("[Tools] MC 26.x MoltenVK: forcing --graphicsBackend vulkan");
+        }
+
         // FCL style: join a server automatically after launch. When serverIp is empty no argument is appended,
         // so the behavior matches the original launch flow exactly. The version check uses the resolved base MC version number
         // (versionName prefers inheritsFrom, so a modded version id does not interfere with the comparison)
