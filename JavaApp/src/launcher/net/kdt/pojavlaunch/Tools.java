@@ -214,7 +214,7 @@ public final class Tools {
         String selectedGraphicsApi = System.getenv("AMETHYST_GRAPHICS_API");
         if (("libMoltenVK.dylib".equals(selectedRenderer) || "vulkan".equals(selectedRenderer))
                 && ("vulkan".equalsIgnoreCase(selectedGraphicsApi) || "prefer_vulkan".equalsIgnoreCase(selectedGraphicsApi))
-                && versionName != null && versionName.matches("^26\\\\..*")) {
+                && versionName != null && versionName.startsWith("26.")) {
             List<String> forcedArgs = new ArrayList<String>(Arrays.asList(argsFromJson));
             // Avoid duplicates if a custom/version JSON already supplies the argument.
             int existing = forcedArgs.indexOf("--graphicsBackend");
