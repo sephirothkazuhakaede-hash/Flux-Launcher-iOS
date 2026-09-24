@@ -285,6 +285,16 @@ jobs:
                   raise SystemExit("built lwjgl-341.jar does not preserve LWJGL 3.4.1 Version.class")
           print("LWJGL 3.4.1 Version.class preserved in built runtime.")
           PY
+          echo "Checking LWJGL 3.4.1 ThreadLocalUtil JNI bridge"
+          javap -p -classpath JavaApp/build/lwjgl-341.jar org.lwjgl.system.ThreadLocalUtil > "$RUNNER_TEMP/threadlocalutil.txt"
+          if ! grep -q 'native long nsetupEnvData(int);' "$RUNNER_TEMP/threadlocalutil.txt"; then
+            echo "::error::LWJGL 3.4.1 ThreadLocalUtil is not using the iOS nsetupEnvData JNI bridge"
+            exit 1
+          fi
+          if grep -q 'native long setupEnvData(int);' "$RUNNER_TEMP/threadlocalutil.txt"; then
+            echo "::error::stale desktop LWJGL 3.4.1 setupEnvData JNI symbol is still present"
+            exit 1
+          fi
 
           # Keep the historical cross-version audit for the legacy 3.3.3 runtime,
           # but do not let an older-version compatibility gap block the 26.x IPA.

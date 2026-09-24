@@ -88,6 +88,10 @@ $(OUTPUTDIR)/lwjgl-%.jar: $(CLASSES) check_empty_classes
 	@cd $(OUTPUTDIR)/lwjgl_lib_$* && find org/lwjgl/openal -maxdepth 1 -name 'SOFTSystemEvent*.class' -delete 2>/dev/null || true
 	@cd $(OUTPUTDIR)/lwjgl_lib_$* && find ../../libs/lwjgl-$* -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \; && rm -rf META-INF
 	@cp -R $(OUTPUTDIR)/lwjgl/* $(OUTPUTDIR)/lwjgl_lib_$*/
+	@# ThreadLocalUtil differs at the JNI ABI boundary in LWJGL 3.4.1. The iOS native
+	@# liblwjgl still exports the 3.3.x nsetupEnvData symbol, so src/lwjgl carries a
+	@# 3.4.1-compatible Java shim. Keep 3.3.3's own class untouched.
+	@if [ "$*" = "333" ]; then cd $(OUTPUTDIR)/lwjgl_lib_$* && $(BOOTJDK)/jar -xf ../../libs/lwjgl-333/lwjgl.jar org/lwjgl/system/ThreadLocalUtil.class; fi
 	@mkdir -p $(OUTPUTDIR)/lwjgl_lib_$*/com/apple/ios/audio
 	@cp -R $(OUTPUTDIR)/launcher/com/apple/ios/audio/*.class $(OUTPUTDIR)/lwjgl_lib_$*/com/apple/ios/audio/
 	@mkdir -p $(OUTPUTDIR)/lwjgl_lib_$*/META-INF/services
