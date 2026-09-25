@@ -213,6 +213,7 @@ public class PojavLauncher {
         String graphicsApi = System.getenv("AMETHYST_GRAPHICS_API");
         if (graphicsApi != null && !graphicsApi.isEmpty()) {
             MCOptionUtils.load();
+
             if ("default".equalsIgnoreCase(graphicsApi)) {
                 // When "Default" is selected, remove the graphicsApi line from options.txt
                 // so MC 26.2+ uses its internal default behavior (it does not read the field)

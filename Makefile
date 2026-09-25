@@ -364,6 +364,11 @@ payload: native dep_mg java jre assets
 	$(call METHOD_DIRCHECK,$(WORKINGDIR)/Flux.app/libs_caciocavallo17)
 	cp -R $(SOURCEDIR)/Natives/resources/en.lproj/LaunchScreen.storyboardc $(WORKINGDIR)/Flux.app/Base.lproj/ || exit 1
 	cp -R $(SOURCEDIR)/Natives/resources/* $(WORKINGDIR)/Flux.app/ || exit 1
+	# MC 26.2 / LWJGL 3.4.1 requires this Shaderc export. The iOS workflow uses PLATFORM=2.
+	curl -fL --retry 3 --connect-timeout 20 https://raw.githubusercontent.com/herbrine8403/Amethyst-iOS-MyRemastered/c8fca92d944caad95415cf056d00a8c11811b669/Natives/resources/Frameworks/libshaderc.dylib -o $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib
+	git hash-object $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib | grep -qx 7b08be5b9e924f26eff8c920ae579233d66ade30 || { echo Shaderc_blob_mismatch; exit 1; }
+	nm -gU $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib | grep -q shaderc_compile_options_set_max_id_bound || { echo Shaderc_missing_max_id_bound; exit 1; }
+	echo Verified_pinned_LWJGL_3_4_x_compatible_iOS_Shaderc
 	cp $(WORKINGDIR)/*.dylib $(WORKINGDIR)/Flux.app/Frameworks/ || exit 1
 	# spirv-cross symlink (a defensive fallback): if the MobileGlues build produces libspirv-cross-c-shared.0.dylib,
 	# create a libspirv-cross.dylib symlink for native code that loads it under the default macOS name.
@@ -371,7 +376,11 @@ payload: native dep_mg java jre assets
 		ln -sf libspirv-cross-c-shared.0.dylib $(WORKINGDIR)/Flux.app/Frameworks/libspirv-cross.dylib; \
 	fi
 		cp -R $(SOURCEDIR)/JavaApp/libs/others/* $(WORKINGDIR)/Flux.app/libs/ || exit 1
-	cp $(SOURCEDIR)/JavaApp/build/*.jar $(WORKINGDIR)/Flux.app/libs/ || exit 1
+	cp $(SOURCEDIR)/JavaApp/build/launcher.jar $(SOURCEDIR)/JavaApp/build/patchjna_agent.jar $(SOURCEDIR)/JavaApp/build/patchsvc.jar $(WORKINGDIR)/Flux.app/libs/ || exit 1
+	# Ship separate LWJGL runtimes. Minecraft 26.x selects 3.4.1; older versions keep 3.3.3.
+	mkdir -p $(WORKINGDIR)/Flux.app/libs/lwjgl-333 $(WORKINGDIR)/Flux.app/libs/lwjgl-341; \
+	cp $(SOURCEDIR)/JavaApp/build/lwjgl-333.jar $(WORKINGDIR)/Flux.app/libs/lwjgl-333/lwjgl.jar || exit 1
+	cp $(SOURCEDIR)/JavaApp/build/lwjgl-341.jar $(WORKINGDIR)/Flux.app/libs/lwjgl-341/lwjgl.jar || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo/* $(WORKINGDIR)/Flux.app/libs_caciocavallo || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo17/* $(WORKINGDIR)/Flux.app/libs_caciocavallo17 || exit 1
 	# Copy TouchController static library if available
@@ -431,7 +440,10 @@ deploy:
 		ldid -S$(SOURCEDIR)/entitlements.trollstore.xml $(WORKINGDIR)/Flux.app/Flux || exit 1; \
 		sudo mv $(WORKINGDIR)/*.dylib $(PREFIX)Applications/Flux.app/Frameworks/ || exit 1; \
 		sudo mv $(WORKINGDIR)/Flux.app/Flux $(PREFIX)Applications/Flux.app/Flux || exit 1; \
-		sudo mv $(SOURCEDIR)/JavaApp/build/*.jar $(PREFIX)Applications/Flux.app/libs/ || exit 1; \
+		sudo mv $(SOURCEDIR)/JavaApp/build/launcher.jar $(SOURCEDIR)/JavaApp/build/patchjna_agent.jar $(SOURCEDIR)/JavaApp/build/patchsvc.jar $(PREFIX)Applications/Flux.app/libs/ || exit 1; \
+		sudo mkdir -p $(PREFIX)Applications/Flux.app/libs/lwjgl-333 $(PREFIX)Applications/Flux.app/libs/lwjgl-341 || exit 1; \
+		sudo mv $(SOURCEDIR)/JavaApp/build/lwjgl-333.jar $(PREFIX)Applications/Flux.app/libs/lwjgl-333/lwjgl.jar || exit 1; \
+		sudo mv $(SOURCEDIR)/JavaApp/build/lwjgl-341.jar $(PREFIX)Applications/Flux.app/libs/lwjgl-341/lwjgl.jar || exit 1; \
 		cd $(PREFIX)Applications/Flux.app/Frameworks || exit 1; \
 		sudo chown -R 501:501 $(PREFIX)Applications/Flux.app/* || exit 1; \
 	elif [ '$(IOS)' = '0' ] && [ '$(DETECTPLAT)' = 'Darwin' ]; then \
