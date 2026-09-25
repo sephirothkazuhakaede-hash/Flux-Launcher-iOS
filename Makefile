@@ -365,12 +365,12 @@ payload: native dep_mg java jre assets
 	cp -R $(SOURCEDIR)/Natives/resources/en.lproj/LaunchScreen.storyboardc $(WORKINGDIR)/Flux.app/Base.lproj/ || exit 1
 	cp -R $(SOURCEDIR)/Natives/resources/* $(WORKINGDIR)/Flux.app/ || exit 1
 	# MC 26.2 / LWJGL 3.4.1 requires this Shaderc export. Use a pinned iOS arm64 binary and fail closed if it is wrong.
-	ifeq ($(PLATFORM),2)
-		curl -fL --retry 3 --connect-timeout 20 https://raw.githubusercontent.com/herbrine8403/Amethyst-iOS-MyRemastered/c8fca92d944caad95415cf056d00a8c11811b669/Natives/resources/Frameworks/libshaderc.dylib -o $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib
-		test "$$(git hash-object $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib)" = "7b08be5b9e924f26eff8c920ae579233d66ade30" || { echo "ERROR: Shaderc blob mismatch"; exit 1; }
-		nm -gU $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib | grep -q '_shaderc_compile_options_set_max_id_bound$$' || { echo "ERROR: Shaderc missing shaderc_compile_options_set_max_id_bound"; exit 1; }
-		echo 'Verified pinned LWJGL 3.4.x-compatible iOS Shaderc'
-	endif
+	if [ '$(PLATFORM)' = '2' ]; then \
+		curl -fL --retry 3 --connect-timeout 20 https://raw.githubusercontent.com/herbrine8403/Amethyst-iOS-MyRemastered/c8fca92d944caad95415cf056d00a8c11811b669/Natives/resources/Frameworks/libshaderc.dylib -o $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib; \
+		test "$(git hash-object $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib)" = "7b08be5b9e924f26eff8c920ae579233d66ade30" || { echo "ERROR: Shaderc blob mismatch"; exit 1; }; \
+		nm -gU $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib | grep -q '_shaderc_compile_options_set_max_id_bound$' || { echo "ERROR: Shaderc missing shaderc_compile_options_set_max_id_bound"; exit 1; }; \
+		echo 'Verified pinned LWJGL 3.4.x-compatible iOS Shaderc'; \
+	fi
 	cp $(WORKINGDIR)/*.dylib $(WORKINGDIR)/Flux.app/Frameworks/ || exit 1
 	# spirv-cross symlink (a defensive fallback): if the MobileGlues build produces libspirv-cross-c-shared.0.dylib,
 	# create a libspirv-cross.dylib symlink for native code that loads it under the default macOS name.
