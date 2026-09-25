@@ -368,9 +368,9 @@ payload: native dep_mg java jre assets
 	# historical Flux binary with Air's known-good iOS arm64 build from a pinned commit.
 	# Verify the exact Git blob plus the required export so upstream cannot silently drift.
 	if [ '$(PLATFORM)' = '2' ]; then \
-		SHADERC_URL='https://raw.githubusercontent.com/herbrine8403/Amethyst-iOS-MyRemastered/c8fca92d944caad95415cf056d00a8c11811b669/Natives/resources/Frameworks/libshaderc.dylib'; \
-		SHADERC_EXPECTED_BLOB='7b08be5b9e924f26eff8c920ae579233d66ade30'; \
-		curl -fL --retry 3 --connect-timeout 20 "$SHADERC_URL" -o $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib; \
+		SHADERC_URL=https://raw.githubusercontent.com/herbrine8403/Amethyst-iOS-MyRemastered/c8fca92d944caad95415cf056d00a8c11811b669/Natives/resources/Frameworks/libshaderc.dylib; \
+		SHADERC_EXPECTED_BLOB=7b08be5b9e924f26eff8c920ae579233d66ade30; \
+		curl -fL --retry 3 --connect-timeout 20 $SHADERC_URL -o $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib; \
 		SHADERC_ACTUAL_BLOB=$(git hash-object $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib); \
 		if [ "$SHADERC_ACTUAL_BLOB" != "$SHADERC_EXPECTED_BLOB" ]; then echo "ERROR: Shaderc blob mismatch: expected $SHADERC_EXPECTED_BLOB, got $SHADERC_ACTUAL_BLOB"; exit 1; fi; \
 		if ! nm -gU $(WORKINGDIR)/Flux.app/Frameworks/libshaderc.dylib | grep -q '_shaderc_compile_options_set_max_id_bound$'; then echo 'ERROR: Shaderc missing shaderc_compile_options_set_max_id_bound'; exit 1; fi; \
